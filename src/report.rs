@@ -71,8 +71,8 @@ struct Report {
     duration: Duration,
     interval: Duration,
     entries: Vec<ReportEntry>,
-    proc_cpus: HashSet<String>,
-    perf_cpus: HashSet<String>,
+    proc_cpus: Vec<String>,
+    perf_cpus: Vec<String>,
 }
 
 fn parse_proc(text: &str) -> HashMap<String, ProcReportPoint> {
@@ -223,6 +223,24 @@ fn get_report(filename: &str) -> Report {
         });
     }
 
+    let mut perf_cpus: Vec<_> = perf_cpus.into_iter().collect();
+    let mut proc_cpus: Vec<_> = proc_cpus.into_iter().collect();
+    let compare = |a: &String, b: &String| {
+        if a == "all" {
+            std::cmp::Ordering::Greater
+        } else if b == "all" {
+            std::cmp::Ordering::Less
+        } else if a.len() < b.len() {
+            std::cmp::Ordering::Less
+        } else if a.len() > b.len() {
+            std::cmp::Ordering::Greater
+        } else {
+            a.cmp(b)
+        }
+    };
+    perf_cpus.sort_by(compare);
+    proc_cpus.sort_by(compare);
+
     Report {
         id: log.id.parse().unwrap(),
         duration: Duration::from_secs(log.duration.parse().unwrap()),
@@ -283,16 +301,28 @@ fn main() {
     println!("Test Interval: {}", report.interval.as_secs());
 
     println!("Per CPU average load:");
-    for cpu in report.proc_cpus.iter() {
-        println!("  - {}: {}", cpu, get_average_proc_load(&report, cpu));
-    }
+    println!(
+        "({})",
+        report
+            .proc_cpus
+            .iter()
+            .map(|cpu| format!("{}: {:.2}%", cpu, get_average_proc_load(&report, cpu)))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
 
     println!("Per CPU average CPU cycles:");
-    for cpu in report.perf_cpus.iter() {
-        println!(
-            "  - {}: {}",
-            cpu,
-            format_number(get_average_cpu_cycles(&report, cpu))
-        );
-    }
+    println!(
+        "({})",
+        report
+            .perf_cpus
+            .iter()
+            .map(|cpu| format!(
+                "{}: {}",
+                cpu,
+                format_number(get_average_cpu_cycles(&report, cpu))
+            ))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
 }
