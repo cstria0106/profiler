@@ -38,7 +38,7 @@ fn spawn_perf(interval: Duration) -> duct::ReaderHandle {
             "sh",
             "-c",
             format!(
-                "sudo simpleperf stat --use-devfreq-counters -a --csv --interval {} -e cycles,context-switches --per-core",
+                "sudo simpleperf stat --use-devfreq-counters -a --csv --interval {} -e cpu-cycles,context-switches --per-core",
                 interval.as_millis()
             )
         )
