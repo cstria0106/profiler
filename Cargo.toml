@@ -1,0 +1,14 @@
+[package]
+name = "profiler"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+duct = "0.13.7"
+signal-hook = "0.3.17"
+uuid = { version = "1.7.0", features = ["v4"] }
+
+[features]
+ubuntu = []
+android = []
