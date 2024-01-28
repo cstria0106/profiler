@@ -84,7 +84,7 @@ fn parse_proc(text: &str) -> HashMap<String, ProcReportPoint> {
             r#"cpu(\d+| ) (\d+) (\d+) (\d+) (\d+) (\d+) (\d+) (\d+) \d+ \d+ \d+"#,
             line
         );
-        if let Some((_, cpu, user, system, nice, idle, iowait, irq, softirq)) = matches {
+        if let Some((_, mut cpu, user, system, nice, idle, iowait, irq, softirq)) = matches {
             let (user, system, nice, idle, iowait, irq, softirq) = (
                 user.parse().unwrap(),
                 system.parse().unwrap(),
@@ -105,6 +105,10 @@ fn parse_proc(text: &str) -> HashMap<String, ProcReportPoint> {
                 softirq,
                 total,
             };
+
+            if cpu == " " {
+                cpu = "all";
+            }
 
             proc.insert(cpu.to_owned(), proc_report);
         }
@@ -141,6 +145,7 @@ fn parse_and_analyze_perf(text: &str) -> HashMap<String, PerfReport> {
 
         if let Some((_, cpu, value, event)) = matches {
             let value = value.parse().unwrap();
+            let event = event.trim();
 
             let perf = perf.entry(cpu.to_string()).or_insert(PerfReport {
                 cycles: 0,
@@ -159,21 +164,30 @@ fn parse_and_analyze_perf(text: &str) -> HashMap<String, PerfReport> {
                 perf.cycles = value;
             } else if event == "context-switches" {
                 perf.context_switches = value;
+            } else {
+                panic!("Unknown event: \"{}\"", event);
             }
         }
+    }
+
+    for cpu in perf.keys().cloned().collect::<Vec<_>>() {
+        let cycles = perf[&cpu].cycles;
+        let context_switches = perf[&cpu].context_switches;
+
+        let all = perf.entry("all".to_string()).or_insert(PerfReport {
+            cycles: 0,
+            context_switches: 0,
+        });
+
+        all.cycles += cycles;
+        all.context_switches += context_switches;
     }
 
     perf
 }
 
-fn main() {
-    let mut args = std::env::args();
-    let cmd = args.next().unwrap();
-    if args.len() != 1 {
-        println!("Usage: {} <input>", cmd);
-    }
-
-    let xml = std::fs::read_to_string(args.next().unwrap()).unwrap();
+fn get_report(filename: &str) -> Report {
+    let xml = std::fs::read_to_string(filename).unwrap();
 
     let log = serde_xml_rs::from_str::<Log>(&xml).unwrap();
 
@@ -209,14 +223,76 @@ fn main() {
         });
     }
 
-    let report = Report {
+    Report {
         id: log.id.parse().unwrap(),
         duration: Duration::from_secs(log.duration.parse().unwrap()),
         interval: Duration::from_secs(log.interval.parse().unwrap()),
         entries: report_entries,
         perf_cpus,
         proc_cpus,
-    };
+    }
+}
 
-    println!("{:#?}", report);
+fn get_average_proc_load(report: &Report, cpu: &str) -> f64 {
+    let mut total = 0.0;
+    let mut count = 0;
+    for entry in report.entries.iter() {
+        if entry.proc.contains_key(cpu) {
+            total += entry.proc[cpu].load;
+            count += 1;
+        }
+    }
+
+    total / count as f64
+}
+
+fn get_average_cpu_cycles(report: &Report, cpu: &str) -> f64 {
+    let mut total = 0.0;
+    let mut count = 0;
+    for entry in report.entries.iter() {
+        if entry.perf.contains_key(cpu) {
+            total += entry.perf[cpu].cycles as f64;
+            count += 1;
+        }
+    }
+    total / count as f64
+}
+
+const UNIT_NAMES: &[&str] = &[" ", ",000", "M", "B", "T"];
+fn format_number(number: f64) -> String {
+    let mut number = number;
+    let mut unit = 0;
+    while number >= 1000.0 {
+        number /= 1000.0;
+        unit += 1;
+    }
+    format!("{:.2}{}", number, UNIT_NAMES[unit])
+}
+
+fn main() {
+    let mut args = std::env::args();
+    let cmd = args.next().unwrap();
+    if args.len() != 1 {
+        println!("Usage: {} <input>", cmd);
+    }
+
+    let report = get_report(&args.next().unwrap());
+
+    println!("Report [{}]", report.id);
+    println!("Test Duration: {}", report.duration.as_secs());
+    println!("Test Interval: {}", report.interval.as_secs());
+
+    println!("Per CPU average load:");
+    for cpu in report.proc_cpus.iter() {
+        println!("  - {}: {}", cpu, get_average_proc_load(&report, cpu));
+    }
+
+    println!("Per CPU average CPU cycles:");
+    for cpu in report.perf_cpus.iter() {
+        println!(
+            "  - {}: {}",
+            cpu,
+            format_number(get_average_cpu_cycles(&report, cpu))
+        );
+    }
 }
