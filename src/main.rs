@@ -46,7 +46,7 @@ fn spawn_perf(interval: Duration) -> duct::ReaderHandle {
         .reader()
         .unwrap()
     } else {
-        panic!("unknown mode");
+        panic!("Unknown System");
     }
 }
 
@@ -54,7 +54,6 @@ fn process(
     output: &mut File,
     duration: Duration,
     interval: Duration,
-    cores: usize,
     mut perf: duct::ReaderHandle,
 ) {
     let (perf_tx, perf_rx) = channel::<String>();
@@ -67,11 +66,13 @@ fn process(
         }
         line.clear();
 
+        let cores = num_cpus::get_physical();
+
         let mut i = 0;
         loop {
             if let Ok(_) = reader.read_line(&mut line) {
                 i += 1;
-                if i % (cores + PERF_ENTRY_ADDITIONAL_LINES) == 0 {
+                if i % (cores * 2 + PERF_ENTRY_ADDITIONAL_LINES) == 0 {
                     perf_tx.send(line.clone()).unwrap();
                     line.clear();
                 }
@@ -142,13 +143,7 @@ fn main() {
         .unwrap();
 
     let perf = spawn_perf(interval);
-    process(
-        &mut output,
-        duration,
-        interval,
-        std::thread::available_parallelism().unwrap().get(),
-        perf,
-    );
+    process(&mut output, duration, interval, perf);
 
     output.write(b"</log>\n").unwrap();
 }

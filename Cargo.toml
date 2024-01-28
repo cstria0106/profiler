@@ -3,9 +3,23 @@ name = "profiler"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "profiler"
+path = "src/main.rs"
+
+[[bin]]
+name = "report"
+path = "src/report.rs"
 
 [dependencies]
 duct = "0.13.7"
+lazy-regex = "3.1.0"
+num_cpus = "1.16.0"
+quick-xml = "0.31.0"
+regex = "1.10.3"
+regex-macro = "0.2.0"
+serde = { version = "1.0.196", features = ["derive"] }
+serde-xml-rs = "0.6.0"
 signal-hook = "0.3.17"
 uuid = { version = "1.7.0", features = ["v4"] }
 
