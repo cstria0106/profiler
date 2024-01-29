@@ -1,8 +1,10 @@
 use std::{
     collections::{HashMap, HashSet},
+    process::exit,
     time::Duration,
 };
 
+use colored::Colorize;
 use lazy_regex::regex_captures;
 use quick_xml::Reader;
 use regex::Regex;
@@ -186,9 +188,7 @@ fn parse_and_analyze_perf(text: &str) -> HashMap<String, PerfReport> {
     perf
 }
 
-fn get_report(filename: &str) -> Report {
-    let xml = std::fs::read_to_string(filename).unwrap();
-
+fn get_report(xml: String) -> Report {
     let log = serde_xml_rs::from_str::<Log>(&xml).unwrap();
 
     let mut report_entries: Vec<ReportEntry> = Vec::new();
@@ -287,42 +287,81 @@ fn format_number(number: f64) -> String {
     format!("{:.2}{}", number, UNIT_NAMES[unit])
 }
 
+fn print_string_collection(arr: &[String]) {
+    let (width, _) = termion::terminal_size().unwrap_or((u16::MAX, u16::MAX));
+    let width = width as i32;
+    let mut remaining_width = width as i32;
+    let mut first = true;
+    let max_len = arr.iter().map(|x| x.len()).max().unwrap();
+    for item in arr {
+        let space = " | ";
+        remaining_width -= (max_len + space.len()) as i32;
+        if first || remaining_width < 0 {
+            if !first {
+                println!();
+            }
+            print!("{:max_len$}", item);
+            remaining_width = width - max_len as i32;
+            first = false;
+        } else {
+            print!("{}{:max_len$}", space, item);
+        }
+    }
+    println!();
+}
+
 fn main() {
     let mut args = std::env::args();
     let cmd = args.next().unwrap();
-    if args.len() != 1 {
-        println!("Usage: {} <input>", cmd);
+    if args.len() == 0 {
+        println!("Usage: {} <file1> <file2> ...", cmd);
+        exit(1);
     }
 
-    let report = get_report(&args.next().unwrap());
+    for filename in args {
+        let report = get_report(std::fs::read_to_string(&filename).unwrap());
 
-    println!("Report [{}]", report.id);
-    println!("Test Duration: {}", report.duration.as_secs());
-    println!("Test Interval: {}", report.interval.as_secs());
+        println!("{:20} {}", "Report ID ".bold().yellow(), report.id);
+        println!("{:20} {}", "File ".bold().yellow(), filename);
+        println!(
+            "{:20} {}",
+            "Test Duration ".bold().yellow(),
+            report.duration.as_secs()
+        );
+        println!(
+            "{:20} {}",
+            "Test Interval ".bold().yellow(),
+            report.interval.as_secs()
+        );
 
-    println!("Per CPU average load:");
-    println!(
-        "({})",
-        report
+        println!("{}", "Per CPU average load".bold().yellow());
+        let max_cpu_len = report.proc_cpus.iter().map(|s| s.len()).max().unwrap_or(0);
+        let proc_average_load = report
             .proc_cpus
             .iter()
-            .map(|cpu| format!("{}: {:.2}%", cpu, get_average_proc_load(&report, cpu)))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-
-    println!("Per CPU average CPU cycles:");
-    println!(
-        "({})",
-        report
+            .map(|cpu| {
+                format!(
+                    "{:max_cpu_len$} {:>6.20}%",
+                    format!("{}", cpu).bold().yellow(),
+                    format_number(get_average_proc_load(&report, cpu))
+                )
+            })
+            .collect::<Vec<_>>();
+        print_string_collection(&proc_average_load);
+        println!("{}", "Per CPU average CPU cycles".bold().yellow());
+        let max_cpu_len = report.perf_cpus.iter().map(|s| s.len()).max().unwrap_or(0);
+        let perf_average_cycles = report
             .perf_cpus
             .iter()
-            .map(|cpu| format!(
-                "{}: {}",
-                cpu,
-                format_number(get_average_cpu_cycles(&report, cpu))
-            ))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
+            .map(|cpu| {
+                format!(
+                    "{:max_cpu_len$} {}",
+                    format!("{}", cpu).bold().yellow(),
+                    format_number(get_average_cpu_cycles(&report, cpu))
+                )
+            })
+            .collect::<Vec<_>>();
+        print_string_collection(&perf_average_cycles);
+        println!();
+    }
 }
